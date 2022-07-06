@@ -31,8 +31,13 @@ int main(){
    _DATA data;
    data.key = my_malloc(10);
    data.key = "asdqwe";
-   int res = 0;
-   find(data.key, &fp, &res);
+   size_t res = 0;
+   int test = -1;
+   test = find(data.key, &fp, &res, &data);
+
+   #ifdef _DEBUG
+      printf("find return : %d\n", test);
+   #endif
 
    close_table(&fp);
 
@@ -105,13 +110,13 @@ int open_table(_files *fp){
          void *ptr = fp->table_buf;
          for(; ptr <= fp->table_buf + TABLE_SIZE;){
             //memset(ptr, '-', NEXT_SIZE);
-            *(int*)ptr = -1;
+            *(size_t*)ptr = -1;
             ptr += NEXT_SIZE;
-            *(char*)(ptr - 1) = '\n';
+            //*(char*)(ptr - 1) = '\n';
          }
 
          #ifdef _DEBUG
-            *(int*)fp->table_buf = 12345678;
+            *(size_t*)fp->table_buf = 12345678;
          #endif
 
          #ifdef _PRINTF_TIME
@@ -196,7 +201,7 @@ int open_table(_files *fp){
 
       #ifdef _DEBUG
          printf("------\n");
-         if(*(int*)fp->table_buf == -1){
+         if(*(size_t*)fp->table_buf == -1){
             printf("<->");
          }
          else{
@@ -219,7 +224,7 @@ int open_table(_files *fp){
       }
       else{
          #ifdef _DEBUG
-            //printf("%s\n", strerror(errno));
+            printf("%s\n", strerror(errno));
          #endif
 
          return errno;
@@ -249,12 +254,12 @@ int close_table(_files *fp){
    return SUCCESS;
 }
 
-/* int find(data.key char *key, _files *fp, int *result, _DATA *result_data){
+int find(const char *key, _files *fp, size_t *result, _DATA *result_data){
    int hash_num = hash_func(key);
 
    void *table_ptr = (fp->table_buf + (hash_num * NEXT_SIZE));
 
-   if(*(int*)table_ptr == -1){
+   if(*(size_t*)table_ptr == -1){
       #ifdef _DEBUG
          printf("NOT FOUND\n");
          //*(int*)table_ptr = 654321;
@@ -271,9 +276,10 @@ int close_table(_files *fp){
    else{
       #ifdef _DEBUG
          printf("CAN FOUND\n");
+         //會不會有table連到一個空資料的位置?
       #endif
 
-      void block_ptr = table_ptr;
+      size_t block_ptr = *(size_t*)table_ptr;
 
       void *data = my_malloc(BLOCK_SIZE);
       if(!data){
@@ -284,9 +290,9 @@ int close_table(_files *fp){
          return ERR_MY_MALLOC;
       }
 
-      size_t next = *(size_t*)(block_ptr + BLOCK_SIZE - NEXT_SIZE);
-      while(){
-         fseek(fp->data, *(int*)block_ptr, SEEK_SET);
+      
+      while(block_ptr != -1){
+         fseek(fp->data, block_ptr, SEEK_SET);
          if(BLOCK_SIZE != fread(data, sizeof(char), BLOCK_SIZE, fp->data)){
             #ifdef _DEBUG
                printf("find read error!\n");
@@ -296,19 +302,20 @@ int close_table(_files *fp){
          }
 
          size_t block_total = *(size_t*)data;
-         void *data_ptr += data + sizeof(size_t);
+         size_t next = *(size_t*)(data + sizeof(size_t));
+         void *data_ptr = data + sizeof(size_t) * 2;
          for(; data_ptr <= data + block_total;){
-            void ptr = data_ptr;
+            void *ptr = data_ptr;
             _DATA data_temp;
             data_temp.total_size = *(size_t*)ptr;
             ptr += sizeof(size_t);
-            data.key = (char*)ptr;
+            data_temp.key = (char*)ptr;
             ptr += strlen((char*)ptr) + 1;
-            data.val_size = *(size_t*)ptr;
+            data_temp.val_size = *(size_t*)ptr;
             ptr += sizeof(size_t);
-            data.val = (char*)ptr;
-            ptr += data.val_size;
-            data.type = *(char*)ptr;
+            data_temp.val = (char*)ptr;
+            ptr += data_temp.val_size;
+            data_temp.type = *(char*)ptr;
             ptr++;
 
             
@@ -317,24 +324,28 @@ int close_table(_files *fp){
                data_ptr = ptr;
             }
             else{
-               *result = *(int*)block_ptr;
-               result = data_ptr;
-               result_data = data_temp;
+               //*result = *(int*)block_ptr;
+               *result = block_ptr + (data_ptr - data);
+               result_data = &data_temp;
 
                my_free(data);
                return SUCCESS;
             }
-
          }   
+
+         block_ptr = next;
       }
 
 
+      *result = -1;
+      result_data = NULL;
+      return NOT_FOUND;
    }
 
 
    return SUCCESS;
 
-} */
+}
 
 int hash_func (const char* key){
    char *str = (char*)key;

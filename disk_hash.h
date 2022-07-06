@@ -55,7 +55,7 @@ int open_table(_files *fp);
 int close_table(_files *fp);
 int add();
 int del();
-int find(const char *key, _files *fp, int *result);
+int find(const char *key, _files *fp, size_t *result, _DATA *result_data);
 int reorganize();
 int hash_func();
 
