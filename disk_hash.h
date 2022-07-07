@@ -22,6 +22,9 @@
 #define TYPE_CHAR          'C'
 #define TYPE_BINARY        'B'
 
+#define KEY_MAX            256
+#define VAL_MAX            1 << 12
+
 
 #define SUCCESS            0
 #define ERR_BASE           0
@@ -31,23 +34,29 @@
 #define ERR_MY_MALLOC      ERR_BASE - 4
 #define ERR_TABLE_SIZE     ERR_BASE - 5
 #define ERR_READ_FILE      ERR_BASE - 6
+#define ERR_PARAMETER      ERR_BASE - 7
 
 
-#define NOT_FOUND          ERR_BASE - 100
+#define NOT_FOUND_TABLE    ERR_BASE - 100
+#define NOT_FOUND_DATA     ERR_BASE - 101
 
 
 typedef struct _DATA{
    size_t   total_size;
-   char     *key;
+   char     key[KEY_MAX];
    size_t   val_size;
-   char     *val;
+   char     val[VAL_MAX];
    char     type;
+   size_t   table_ptr;
+   size_t   data_ptr;
+   size_t   block_ptr;
+   int      hash_num;
 } _DATA;
 
 typedef struct _files{
-   FILE *table;
-   FILE *data;
-   void *table_buf;
+   FILE     *table;
+   FILE     *data;
+   size_t   *table_buf;
 } _files;
 
 
@@ -55,7 +64,8 @@ int open_table(_files *fp);
 int close_table(_files *fp);
 int add();
 int del();
-int find(const char *key, _files *fp, size_t *result, _DATA *result_data);
+int inquire();
+int find(const char *key, _files *fp, size_t *result_data_ptr, size_t *result_block_ptr, _DATA *result_data);
 int reorganize();
 int hash_func();
 
