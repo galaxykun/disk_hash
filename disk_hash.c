@@ -16,6 +16,7 @@ int main(){
    #endif
 
    _files fp;
+   _DATA data;
 
    #ifdef _PRINTF_TIME
       start = clock();
@@ -27,17 +28,38 @@ int main(){
       stop = clock();
       printf("open_table time : %f\n", ((double)(stop - start)/CLOCKS_PER_SEC));
    #endif
+   FILE *fpp = fopen("random_100.txt", "r");
+   char key[10];
+   int val;   
+   for(; fscanf(fpp, "%s %d", key, &val) != EOF;){
+      
+      int return_num = add(key, &val, sizeof(int), TYPE_INT, &fp, &data);
 
-   /* _DATA data;
-   data.key = my_malloc(10);
-   data.key = "asdqwe";
-   size_t res = 0;
-   int test = -1;
-   test = find(data.key, &fp, &res, &data); */
+      #ifdef _DEBUG
+         printf("add return : %d\n", return_num);
+      #endif
+
+      return_num = find(key, &fp, &data);   
+   }
+
+   fclose(fpp);
 
    #ifdef _DEBUG
-      //printf("find return : %d\n", test);
+      printf("find return : %d\n", return_num);
    #endif
+
+   return_num = del(key, &fp, &data);
+
+   #ifdef _DEBUG
+      printf("del return : %d\n", return_num);
+   #endif
+
+   return_num = find(key, &fp, &data);
+
+   #ifdef _DEBUG
+      printf("find2 return : %d\n", return_num);
+   #endif
+
 
    close_table(&fp);
 
@@ -109,14 +131,11 @@ int open_table(_files *fp){
 
          size_t *ptr = fp->table_buf;
          for(; ptr <= fp->table_buf + (TABLE_SIZE / NEXT_SIZE); ptr++){
-            //memset(ptr, '-', NEXT_SIZE);
-            *ptr = -1;
-            //ptr += NEXT_SIZE;
-            //*(char*)(ptr - 1) = '\n';
+            *ptr = 0;
          }
 
          #ifdef _DEBUG
-            *(size_t*)fp->table_buf = 12345678;
+            //*(size_t*)fp->table_buf = 12345678;
          #endif
 
          #ifdef _PRINTF_TIME
@@ -201,7 +220,7 @@ int open_table(_files *fp){
 
       #ifdef _DEBUG
          printf("------\n");
-         if(*(fp->table_buf) == -1){
+         if(*(fp->table_buf) == 0){
             printf("<->");
          }
          else{
@@ -219,13 +238,28 @@ int open_table(_files *fp){
       return errno;
    }
    
-   fp->data = fopen("data/data", "r+");
+   if(errno == ENOENT){
+      fp->data = fopen("data/data", "w+");
+   }
+   else{
+      fp->data = fopen("data/data", "r+");
+   }
    if(!fp->data){
       #ifdef _DEBUG
          printf("ERROR open file!\n");
       #endif
 
       return ERR_OPEN_FILE;
+   }
+   
+   fseek(fp->data, 0, SEEK_SET);
+   if(1 != fwrite("-", 1, 1, fp->data)){
+      #ifdef _DEBUG
+         printf("ERROR open WRITE DATA\n");
+      #endif
+
+      close_table(fp);
+      return ERR_WRITE;
    }
    
    
@@ -250,12 +284,11 @@ int find(const char *key, _files *fp, _DATA *result_data){
       return ERR_PARAMETER;
    }
 
-   //result_data->hash_num = hash_func(key);
    result_data->table_ptr  = hash_func(key);
    result_data->block_ptr  = *(fp->table_buf + result_data->table_ptr);
-   result_data->data_ptr   = -1;
+   result_data->data_ptr   = 0;
 
-   if(result_data->block_ptr == -1){
+   if(!result_data->block_ptr){
       #ifdef _DEBUG
          printf("NOT FOUND TABLE\n");
       #endif
@@ -281,9 +314,9 @@ int find(const char *key, _files *fp, _DATA *result_data){
          return ERR_MY_MALLOC;
       }
  
-      while(block_ptr != -1){
-         fseek(fp->data, block_ptr, SEEK_SET);
+      while(block_ptr){
          fflush(fp->data);
+         fseek(fp->data, block_ptr, SEEK_SET);
          if(BLOCK_SIZE != fread(data, 1, BLOCK_SIZE, fp->data)){
             #ifdef _DEBUG
                printf("find read error!\n");
@@ -298,10 +331,10 @@ int find(const char *key, _files *fp, _DATA *result_data){
          size_t next = *(size_t*)(data + BLOCK_TOTAL_SIZE);
          void *data_ptr = data + BLOCK_TOTAL_SIZE + NEXT_SIZE;
 
-         for(; data_ptr <= data + block_total;){
+         for(; data_ptr < data + block_total;){
             void *ptr = data_ptr;
 
-            if(!strcmp(key, (char*)(ptr + sizeof(size_t)))){
+            if(!strcmp(key, (char*)(ptr + (sizeof(result_data->total_size))))){
                result_data->total_size = *(size_t*)ptr;
                ptr += sizeof(size_t);
 
@@ -353,9 +386,6 @@ int del(const char *key, _files *fp, _DATA *result_data){
    int return_num = find(key, fp, result_data);
 
    if(!return_num){
-      result_data->data_ptr   = -1;
-      result_data->block_ptr  = -1;
-
       void *block_buf = my_malloc(BLOCK_SIZE);
       if(!block_buf){
          #ifdef _DEBUG
@@ -365,8 +395,8 @@ int del(const char *key, _files *fp, _DATA *result_data){
          return ERR_MY_MALLOC;
       }
 
-      fseek(fp->data, result_data->block_ptr, SEEK_SET);
       fflush(fp->data);
+      fseek(fp->data, result_data->block_ptr, SEEK_SET);
       if(BLOCK_SIZE != fread(block_buf, 1, BLOCK_SIZE, fp->data)){
          #ifdef _DEBUG
             printf("ERROR del READ!\n");
@@ -377,8 +407,9 @@ int del(const char *key, _files *fp, _DATA *result_data){
 
       *(size_t*)block_buf -= result_data->total_size;
 
-      fseek(fp->data, result_data->block_ptr, SEEK_SET);
       void *ptr = block_buf;
+      fflush(fp->data);
+      fseek(fp->data, result_data->block_ptr, SEEK_SET);
       if(result_data->data_ptr != fwrite(ptr, 1, result_data->data_ptr, fp->data)){
          #ifdef _DEBUG
             printf("del ERROR add WRITE 1\n");
@@ -395,6 +426,9 @@ int del(const char *key, _files *fp, _DATA *result_data){
 
          return ERR_WRITE;
       }  
+
+      result_data->data_ptr   = 0;
+      result_data->block_ptr  = 0;
    }
 
 
@@ -431,13 +465,11 @@ int add(const char *key, const void *val, const size_t val_size, const char type
    //total + key + val_size + val + type;
    size_t total_size = sizeof(size_t) + strlen(key) + 1 + sizeof(size_t) + val_size + sizeof(char);
 
-   void *table_ptr      = fp->table_buf;
-   *(size_t*)table_ptr   += result_data->table_ptr;
+   size_t *table_ptr    = fp->table_buf + result_data->table_ptr;
+   size_t block_ptr     = result_data->block_ptr;
+   size_t pre_block_ptr = 0;
 
-   size_t block_ptr     = *(size_t*)result_data->block_ptr;
-   size_t pre_block_ptr = -1;
-
-   for(; block_ptr != -1;){
+   for(; block_ptr;){
       fflush(fp->data);
       fseek(fp->data, block_ptr, SEEK_SET);
       if(BLOCK_SIZE != fread(block_buf, 1, BLOCK_SIZE, fp->data)){
@@ -457,7 +489,7 @@ int add(const char *key, const void *val, const size_t val_size, const char type
       block_ptr      = *(size_t*)(block_buf + BLOCK_TOTAL_SIZE);
    }
 
-   if(block_ptr == -1){
+   if(!block_ptr){
       struct stat info;
 
       fflush(fp->data);
@@ -472,9 +504,10 @@ int add(const char *key, const void *val, const size_t val_size, const char type
 
       block_ptr = info.st_size;
 
-      if(pre_block_ptr == -1){
-         *(size_t*)table_ptr = block_ptr;
+      if(!pre_block_ptr){
+         *table_ptr = block_ptr;
 
+         fflush(fp->table);
          fseek(fp->table, 0, SEEK_SET);
          if(TABLE_SIZE != fwrite(fp->table_buf, 1, TABLE_SIZE, fp->table)){
             #ifdef _DEBUG
@@ -488,6 +521,7 @@ int add(const char *key, const void *val, const size_t val_size, const char type
       else{
          *(size_t*)(block_buf + BLOCK_TOTAL_SIZE) = block_ptr;
 
+         fflush(fp->data);
          fseek(fp->data, pre_block_ptr, SEEK_SET);
          if(BLOCK_SIZE != fwrite(block_buf, 1, BLOCK_SIZE, fp->data)){
             #ifdef _DEBUG
@@ -500,15 +534,15 @@ int add(const char *key, const void *val, const size_t val_size, const char type
       }
 
       *(size_t*)block_buf = sizeof(size_t) * 2;
-      *(size_t*)(block_buf + BLOCK_TOTAL_SIZE) = -1;  
+      *(size_t*)(block_buf + BLOCK_TOTAL_SIZE) = 0;  
    }
 
    //add data
-   result_data->block_ptr  =  block_ptr;
-   *(size_t*)block_buf     += total_size;
-
    void *data_ptr          = block_buf + *(size_t*)block_buf;
    result_data->data_ptr   = *(size_t*)block_buf;
+
+   result_data->block_ptr  =  block_ptr;
+   *(size_t*)block_buf     += total_size;
 
    *(size_t*)data_ptr      =  total_size;
    result_data->total_size =  total_size;
@@ -531,8 +565,9 @@ int add(const char *key, const void *val, const size_t val_size, const char type
    result_data->type    = type;
 
    //write data
+   fflush(fp->data);
    fseek(fp->data, block_ptr, SEEK_SET);
-   if(TABLE_SIZE != fwrite(block_buf, 1, BLOCK_SIZE, fp->data)){
+   if(BLOCK_SIZE != fwrite(block_buf, 1, BLOCK_SIZE, fp->data)){
       #ifdef _DEBUG
          printf("ERROR add WRITE TABLE\n");
       #endif

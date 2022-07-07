@@ -68,6 +68,6 @@ int del(const char *key, _files *fp, _DATA *result_data);
 int find(const char *key, _files *fp, _DATA *result_data);
 int hash_func (const char* key);
 int reorganize();
-int inquire();
+//int inquire();
 
 #endif
