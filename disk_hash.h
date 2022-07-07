@@ -37,8 +37,9 @@
 #define ERR_PARAMETER      ERR_BASE - 7
 
 
-#define NOT_FOUND_TABLE    ERR_BASE - 100
-#define NOT_FOUND_DATA     ERR_BASE - 101
+#define NOT_FOUND          -100
+// #define NOT_FOUND_TABLE    NOT_FOUND - 1
+// #define NOT_FOUND_DATA     NOT_FOUND - 2
 
 
 typedef struct _DATA{
@@ -47,10 +48,10 @@ typedef struct _DATA{
    size_t   val_size;
    char     val[VAL_MAX];
    char     type;
-   size_t   table_ptr;
+   int      table_ptr;
    size_t   data_ptr;
    size_t   block_ptr;
-   int      hash_num;
+   //int      hash_num;
 } _DATA;
 
 typedef struct _files{
@@ -62,11 +63,11 @@ typedef struct _files{
 
 int open_table(_files *fp);
 int close_table(_files *fp);
-int add();
-int del();
-int inquire();
-int find(const char *key, _files *fp, size_t *result_data_ptr, size_t *result_block_ptr, _DATA *result_data);
+int add(const char *key, const void *val, const size_t val_size, const char type, _files *fp, _DATA *result_data);
+int del(const char *key, _files *fp, _DATA *result_data);
+int find(const char *key, _files *fp, _DATA *result_data);
+int hash_func (const char* key);
 int reorganize();
-int hash_func();
+int inquire();
 
 #endif
