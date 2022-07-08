@@ -36,6 +36,7 @@
 #define ERR_TABLE_SIZE     ERR_BASE - 5
 #define ERR_READ_FILE      ERR_BASE - 6
 #define ERR_PARAMETER      ERR_BASE - 7
+#define ERR_RENAME         ERR_BASE - 8
 
 
 #define NOT_FOUND          -100
@@ -52,6 +53,7 @@ typedef struct _DATA{
    int      table_ptr;
    size_t   data_ptr;
    size_t   block_ptr;
+   size_t   pre_block_ptr;
    //int      hash_num;
 } _DATA;
 

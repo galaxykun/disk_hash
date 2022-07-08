@@ -261,13 +261,14 @@ int find(const char *key, _files *fp, _DATA *result_data){
       return ERR_PARAMETER;
    }
 
-   result_data->table_ptr  = hash_func(key);
-   result_data->block_ptr  = *(fp->table_buf + result_data->table_ptr);
-   result_data->data_ptr   = 0;
-   result_data->total_size = 0;
-   *(result_data->key)     = 0;
-   result_data->val_size   = 0;
-   result_data->type       = 0;
+   result_data->table_ptr     = hash_func(key);
+   result_data->block_ptr     = *(fp->table_buf + result_data->table_ptr);
+   result_data->data_ptr      = 0;
+   result_data->pre_block_ptr = 0;
+   result_data->total_size    = 0;
+   *(result_data->key)        = 0;
+   result_data->val_size      = 0;
+   result_data->type          = 0;
 
    if(!result_data->block_ptr){
       #ifdef _DEBUG
@@ -282,6 +283,7 @@ int find(const char *key, _files *fp, _DATA *result_data){
       #endif
 
       size_t block_ptr = result_data->block_ptr;
+      size_t pre_block_ptr;
 
       void *block_buf = my_malloc(BLOCK_SIZE);
       if(!block_buf){
@@ -331,8 +333,9 @@ int find(const char *key, _files *fp, _DATA *result_data){
                result_data->type = *(char*)ptr;
                ptr++;
 
-               result_data->block_ptr = block_ptr;
-               result_data->data_ptr = data_ptr - block_buf;
+               result_data->data_ptr      = data_ptr - block_buf;
+               result_data->block_ptr     = block_ptr;
+               result_data->pre_block_ptr = pre_block_ptr;
 
                my_free(block_buf);
 
@@ -342,6 +345,7 @@ int find(const char *key, _files *fp, _DATA *result_data){
             data_ptr += *(size_t*)ptr;
          }   
 
+         pre_block_ptr = block_ptr;
          block_ptr = next;
       }
 
@@ -376,6 +380,7 @@ int del(const char *key, _files *fp, _DATA *result_data){
       }
 
       fflush(fp->data);
+
       fseek(fp->data, result_data->block_ptr, SEEK_SET);
       if(BLOCK_SIZE != fread(block_buf, 1, BLOCK_SIZE, fp->data)){
          #ifdef _DEBUG
@@ -389,32 +394,66 @@ int del(const char *key, _files *fp, _DATA *result_data){
 
       *(size_t*)block_buf -= result_data->total_size;
 
-      void *ptr = block_buf;
-      fflush(fp->data);
-      fseek(fp->data, result_data->block_ptr, SEEK_SET);
-      if(result_data->data_ptr != fwrite(ptr, 1, result_data->data_ptr, fp->data)){
-         #ifdef _DEBUG
-            printf("del ERROR add WRITE 1\n");
-         #endif
+      //empty block?
+      if(*(size_t*)block_buf == BLOCK_TOTAL_SIZE + NEXT_SIZE){
+         //pre is table?
+         if(result_data->pre_block_ptr){
+            fseek(fp->data, result_data->pre_block_ptr, SEEK_SET);
+            if(BLOCK_SIZE != fread(block_buf, 1, BLOCK_SIZE, fp->data)){
+               #ifdef _DEBUG
+                  printf("ERROR del READ!\n");
+               #endif
 
-         my_free(block_buf);
+               my_free(block_buf);
 
-         return ERR_WRITE;
+               return ERR_READ_FILE;
+            }
+
+            *(size_t*)(block_buf + BLOCK_TOTAL_SIZE) = 0;
+
+            fseek(fp->data, result_data->pre_block_ptr, SEEK_SET);
+         }
+         else{
+            fseek(fp->data, result_data->block_ptr, SEEK_SET); 
+         }
+
+         if(BLOCK_SIZE != fwrite(block_buf, 1, BLOCK_SIZE, fp->data)){
+            #ifdef _DEBUG
+               printf("del ERROR add WRITE 1\n");
+            #endif
+
+            my_free(block_buf);
+
+            return ERR_WRITE;
+         }
       }
-      size_t temp = result_data->data_ptr + result_data->total_size;
-      ptr += temp;
-      if(BLOCK_SIZE - temp != fwrite(ptr, 1, BLOCK_SIZE - temp, fp->data)){
-         #ifdef _DEBUG
-            printf("del ERROR add WRITE 2\n");
-         #endif
+      else{
+         void *ptr = block_buf;
+         fseek(fp->data, result_data->block_ptr, SEEK_SET);
+         if(result_data->data_ptr != fwrite(ptr, 1, result_data->data_ptr, fp->data)){
+            #ifdef _DEBUG
+               printf("del ERROR add WRITE 1\n");
+            #endif
 
-         my_free(block_buf);
+            my_free(block_buf);
 
-         return ERR_WRITE;
-      }  
+            return ERR_WRITE;
+         }
+         size_t temp = result_data->data_ptr + result_data->total_size;
+         ptr += temp;
+         if(BLOCK_SIZE - temp != fwrite(ptr, 1, BLOCK_SIZE - temp, fp->data)){
+            #ifdef _DEBUG
+               printf("del ERROR add WRITE 2\n");
+            #endif
 
-      result_data->data_ptr   = 0;
-      result_data->block_ptr  = 0;
+            my_free(block_buf);
+
+            return ERR_WRITE;
+         }  
+
+         result_data->data_ptr   = 0;
+         result_data->block_ptr  = 0;
+      }
    }
 
 
@@ -569,7 +608,7 @@ int hash_func (const char* key){
    return (int)(hash % (TABLE_SIZE / NEXT_SIZE));
 }
 
-/* int reorganize(_files *fp){
+int reorganize(_files *fp){
    if(!fp){
       return ERR_PARAMETER;
    }
@@ -579,7 +618,7 @@ int hash_func (const char* key){
    if(return_num){
       return return_num;
    }
-   open_table(fp);
+   return_num = open_table(fp);
    if(return_num){
       return return_num;
    }
@@ -597,15 +636,267 @@ int hash_func (const char* key){
          printf("ERROR reorganize WRITE DATA\n");
       #endif
 
-      close_table(fp);
-      return ERR_WRITE;
+      goto ERROR;
+      return_num = ERR_WRITE;
    }
+
+   void *block_buf = my_malloc(BLOCK_SIZE);
+   if(!block_buf){
+      #ifdef _DEBUG
+         printf("reorganize malloc error!\n");
+      #endif
+
+      goto ERROR;
+      return_num = ERR_MY_MALLOC;
+   }
+
+   void *temp_buf = my_malloc(BLOCK_SIZE);
+   if(!temp_buf){
+      #ifdef _DEBUG
+         printf("reorganize malloc error!\n");
+      #endif
+
+      goto ERROR;
+      return_num = ERR_MY_MALLOC;
+   }
+
+   /* struct stat info;
+   fflush(data_fp);
+   if(stat("data/data_temp", &info)){
+      #ifdef _DEBUG
+         printf("%s\n", strerror(errno));
+      #endif
+
+      goto ERROR;
+      return_num = errno;
+   } */
+
+   size_t new_block_ptr = 1;
 
    for(int i = 0; i < TABLE_SIZE / NEXT_SIZE; i++){
+      size_t old_block_ptr = fp->table_buf[i];
+      
+      //find first not empty block
+      for(; old_block_ptr;){
+         fseek(fp->data, old_block_ptr, SEEK_SET);
+         if(BLOCK_SIZE != fread(block_buf, 1, BLOCK_SIZE, fp->data)){
+            #ifdef _DEBUG
+               printf("reorganize read error!\n");
+            #endif
+
+            goto ERROR;
+            return_num = ERR_READ_FILE;
+         }
+
+         old_block_ptr = *(size_t*)(block_buf + BLOCK_TOTAL_SIZE);
+
+         if(*(size_t*)block_buf > BLOCK_TOTAL_SIZE + NEXT_SIZE){
+            break;
+         }
+      }
+
+      //not found
+      if(*(size_t*)block_buf == BLOCK_TOTAL_SIZE + NEXT_SIZE){
+         fp->table_buf[i] = 0;
+         continue;
+      }
+
+      //find!
+      fp->table_buf[i] = new_block_ptr;
+      for(; old_block_ptr;){
+         fseek(fp->data, old_block_ptr, SEEK_SET);
+         if(BLOCK_SIZE != fread(temp_buf, 1, BLOCK_SIZE, fp->data)){
+            #ifdef _DEBUG
+               printf("reorganize read error!\n");
+            #endif
+
+            goto ERROR;
+            return_num = ERR_READ_FILE;
+         }
+
+         old_block_ptr = *(size_t*)(temp_buf + BLOCK_TOTAL_SIZE);
+
+         if(*(size_t*)temp_buf == BLOCK_TOTAL_SIZE + NEXT_SIZE){
+            continue;
+         }
+
+         *(size_t*)(block_buf + BLOCK_TOTAL_SIZE) = new_block_ptr + BLOCK_SIZE;
+
+         /* fflush(data_fp);
+         fseek(data_fp, new_block_ptr, SEEK_SET); */
+         if(BLOCK_SIZE != fwrite(block_buf, 1, BLOCK_SIZE, data_fp)){
+            #ifdef _DEBUG
+               printf("ERROR reorganize WRITE DATA\n");
+            #endif
+
+            goto ERROR;
+            return_num = ERR_WRITE;
+         }
+
+         new_block_ptr += BLOCK_SIZE;
+
+         memcpy(block_buf, temp_buf, BLOCK_SIZE);
+      }
+      
+      *(size_t*)(block_buf + BLOCK_TOTAL_SIZE) = 0;
+      if(BLOCK_SIZE != fwrite(block_buf, 1, BLOCK_SIZE, data_fp)){
+         #ifdef _DEBUG
+            printf("ERROR reorganize WRITE DATA\n");
+         #endif
+
+         goto ERROR;
+         return_num = ERR_WRITE;
+      }
+
+      new_block_ptr += BLOCK_SIZE;
+   }
+
+   return_num = close_table(fp);
+   if(return_num){
+      goto ERROR;
+   }
+
+   if(rename("data/data_temp","data/data")){
+      #ifdef _DEBUG
+         printf("ERROR rename DATA\n");
+      #endif
+
+      goto ERROR;
+      return_num = ERR_RENAME;
+   }
+
+   return_num = open_table(fp);
+   if(return_num){
+      goto ERROR;
+   }
+      
+   /////////////////////////////////////////////////////////////////////
+   {
+      /*
+      if(*(size_t*)block_buf == BLOCK_TOTAL_SIZE + NEXT_SIZE && *(size_t*)(block_buf + BLOCK_TOTAL_SIZE) == 0){
+         fp->table_buf[i] = 0;
+         continue;
+      }
+      else{
+         
+      }
+
+      old_block_ptr = *(size_t*)(block_buf + BLOCK_TOTAL_SIZE);
+      *(size_t*)(block_buf + BLOCK_TOTAL_SIZE) = 0;
+
+      for(; old_block_ptr;){
+         if()
+         *(size_t*)(block_buf + BLOCK_TOTAL_SIZE) = new_block_ptr + BLOCK_SIZE;
+
+         fflush(data_fp);
+         fseek(data_fp, new_block_ptr, SEEK_SET);
+         if(BLOCK_SIZE != fwrite(block_buf, 1, BLOCK_SIZE, data_fp)){
+            #ifdef _DEBUG
+               printf("ERROR reorganize WRITE DATA\n");
+            #endif
+
+            goto ERROR;
+            return ERR_WRITE;
+         }
+         
+         fflush(data_fp);
+         if(stat("data/data_temp", &info)){
+            #ifdef _DEBUG
+               printf("%s\n", strerror(errno));
+            #endif
+
+            goto ERROR;
+            return errno;
+         }
+
+         size_t new_block_ptr = info.st_size;
+
+         fseek(fp->data, old_block_ptr, SEEK_SET);
+         if(BLOCK_SIZE != fread(block_buf, 1, BLOCK_SIZE, fp->data)){
+            #ifdef _DEBUG
+               printf("reorganize read error!\n");
+            #endif
+
+            goto ERROR;
+            return ERR_READ_FILE;
+         }
+
+         old_block_ptr = *(size_t*)(block_buf + BLOCK_TOTAL_SIZE);
+         *(size_t*)(block_buf + BLOCK_TOTAL_SIZE) = 0;
+      }
+      
+
+      
+
+      
+      
+      
+       
+      void*    pre_data_ptr;
+
+      struct stat info;
+      fflush(data_fp);
+      if(stat("data/data_temp", &info)){
+         #ifdef _DEBUG
+            printf("%s\n", strerror(errno));
+         #endif
+
+         goto ERROR;
+         return errno;
+      }
+      fseek(fp->data, old_block_ptr, SEEK_SET);
+      if(BLOCK_SIZE != fread(pre_buf, 1, BLOCK_SIZE, fp->data)){
+         #ifdef _DEBUG
+            printf("reorganize read error!\n");
+         #endif
+
+         goto ERROR;
+         return ERR_READ_FILE;
+      }
+
+      if(*(size_t*)pre_buf == BLOCK_TOTAL_SIZE + NEXT_SIZE){
+         fp->table_buf[i] = 0;
+         continue;
+      }
+
+      fp->table_buf[i] = new_block_ptr;
+
+      *(size_t*)new_buf                      = BLOCK_TOTAL_SIZE + NEXT_SIZE;
+      *(size_t*)(new_buf + BLOCK_TOTAL_SIZE) = 0;
+      new_data_ptr                           = new_buf + BLOCK_TOTAL_SIZE + NEXT_SIZE;
+
+      //*(size_t*)pre_buf                      = BLOCK_TOTAL_SIZE + NEXT_SIZE;
+      *(size_t*)(pre_buf + BLOCK_TOTAL_SIZE) = 0;
+      pre_data_ptr                           = pre_buf + BLOCK_TOTAL_SIZE + NEXT_SIZE;
+
+      old_block_ptr = *(size_t*)(pre_buf + BLOCK_TOTAL_SIZE);
+
+      for(; old_block_ptr;){
+         fseek(fp->data, old_block_ptr, SEEK_SET);
+         if(BLOCK_SIZE != fread(old_buf, 1, BLOCK_SIZE, fp->data)){
+            #ifdef _DEBUG
+               printf("reorganize read error!\n");
+            #endif
+
+            goto ERROR;
+            return ERR_READ_FILE;
+         }
+
+         if(*(size_t*)pre_buf + )
+      }
+      */
+ 
+      
+
+
 
    }
 
+   ERROR:
+   fclose(data_fp);
+   my_free(block_buf);
+   my_free(temp_buf);
 
 
-
-} */
+   return SUCCESS;
+}
