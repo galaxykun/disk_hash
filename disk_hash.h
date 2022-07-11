@@ -37,6 +37,7 @@
 #define ERR_READ_FILE      ERR_BASE - 6
 #define ERR_PARAMETER      ERR_BASE - 7
 #define ERR_RENAME         ERR_BASE - 8
+#define ERR_CLOSE          ERR_BASE - 9
 
 
 #define NOT_FOUND          -100
@@ -61,6 +62,7 @@ typedef struct _files{
    FILE     *table;
    FILE     *data;
    size_t   *table_buf;
+   void     *block_buf;
 } _files;
 
 
@@ -71,6 +73,5 @@ int del(const char *key, _files *fp, _DATA *result_data);
 int find(const char *key, _files *fp, _DATA *result_data);
 int hash_func (const char* key);
 int reorganize();
-//int inquire();
 
 #endif
