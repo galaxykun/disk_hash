@@ -1,5 +1,5 @@
-#ifndef _FILE_H_
-#define _FILE_H_
+#ifndef _DISk_HASH_H_
+#define _DISk_HASH_H_
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -12,9 +12,10 @@
 
 
 #define BLOCK_SIZE         1 << 14
-#define BLOCK_TOTAL_SIZE   sizeof(size_t)
-#define NEXT_SIZE          sizeof(size_t)
-#define TABLE_SIZE         10000019 * NEXT_SIZE
+#define BLOCK_TOTAL_SIZE   sizeof(long)
+#define NEXT_SIZE          sizeof(long)
+#define TABLE_NUMBER       10000019
+#define TABLE_SIZE         TABLE_NUMBER * NEXT_SIZE
 
 #define FNV_prime          16777619
 #define offset_basis       2166136261
@@ -22,6 +23,9 @@
 #define TYPE_INT           'I'
 #define TYPE_CHAR          'C'
 #define TYPE_BINARY        'B'
+#define DIR_NAME           "data"
+#define TABLE_FILE_NAME    "data/table"
+#define DATA_FILE_NAME     "data/data"
 
 #define KEY_MAX            256
 #define VAL_MAX            1 << 12
@@ -39,11 +43,7 @@
 #define ERR_RENAME         ERR_BASE - 8
 #define ERR_CLOSE          ERR_BASE - 9
 
-
-#define NOT_FOUND          -100
-// #define NOT_FOUND_TABLE    NOT_FOUND - 1
-// #define NOT_FOUND_DATA     NOT_FOUND - 2
-
+#define NOT_FOUND          ERR_BASE - 100
 
 typedef struct _DATA{
    size_t   total_size;
@@ -51,26 +51,38 @@ typedef struct _DATA{
    size_t   val_size;
    char     val[VAL_MAX];
    char     type;
-   int      table_ptr;
-   size_t   data_ptr;
-   size_t   block_ptr;
-   size_t   pre_block_ptr;
-   //int      hash_num;
 } _DATA;
 
-typedef struct _files{
+typedef struct _BLOCK{
+   int      table_ptr;
+   long     data_ptr;
+   long     block_ptr;
+   long     pre_block_ptr;
+} _BLOCK;
+
+typedef struct _BUFFER{
    FILE     *table;
    FILE     *data;
-   size_t   *table_buf;
+   long     *table_buf;
    void     *block_buf;
-} _files;
+} _BUFFER;
+
+typedef struct _DISK_HASH{
+   _BLOCK  block;
+   _BUFFER buf;
+} _DISK_HASH;
 
 
-int open_table(_files *fp);
-int close_table(_files *fp);
-int add(const char *key, const void *val, const size_t val_size, const char type, _files *fp, _DATA *result_data);
-int del(const char *key, _files *fp, _DATA *result_data);
-int find(const char *key, _files *fp, _DATA *result_data);
+int open_table(_DISK_HASH *dh);
+int close_table(_DISK_HASH *dh);
+int add(const char *key, const void *val, const size_t val_size, const char type, _DISK_HASH *dh);
+int del(const char *key, _DISK_HASH *dh);
+int find(const char *key, _DISK_HASH *dh, _DATA *result);
+int search_data(const char *key, _DISK_HASH *dh);
+int search_enough_space_block(int space, _DISK_HASH *dh);
+int add_new_block_to_data(_DISK_HASH *dh);
+int copy_to_data(void *ptr, _DATA *result);
+int copy_to_buffer( void *ptr, size_t total_size, const char *key, const void *val, const size_t val_size, const char type);
 int hash_func (const char* key);
 int reorganize();
 
