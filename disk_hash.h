@@ -26,10 +26,10 @@
 #define DIR_NAME           "data"
 #define TABLE_FILE_NAME    "data/table"
 #define DATA_FILE_NAME     "data/data"
+#define NEWDATA_FILE_NAME  "data/data_temp"
 
 #define KEY_MAX            256
 #define VAL_MAX            1 << 12
-
 
 #define SUCCESS            0
 #define ERR_BASE           0
@@ -44,6 +44,7 @@
 #define ERR_CLOSE          ERR_BASE - 9
 
 #define NOT_FOUND          ERR_BASE - 100
+
 
 typedef struct _DATA{
    size_t   total_size;
@@ -84,6 +85,8 @@ int add_new_block_to_data(_DISK_HASH *dh);
 int copy_to_data(void *ptr, _DATA *result);
 int copy_to_buffer( void *ptr, size_t total_size, const char *key, const void *val, const size_t val_size, const char type);
 int hash_func (const char* key);
-int reorganize();
+int reorganize(_DISK_HASH *dh);
+int reorganize_data(_DISK_HASH *dh, FILE *new_data, void *data_block_buf, long *new_data_ptr, int i);
+int write_to_new_data(void *buffer, long next, FILE *new_data);
 
 #endif
