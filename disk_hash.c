@@ -11,9 +11,11 @@
 #ifdef _DEBUG
    int total;
    int find_total;
+   
 #endif
 
 
+#define NUM 100000
 int main(){
 
    _DISK_HASH dh;
@@ -35,16 +37,12 @@ int main(){
    #ifdef _PRINTF_TIME
       gettimeofday(&add_start, NULL);
    #endif
-
-   FILE *fpp = fopen("random_10.txt", "r");
-   char key[10];
-   int val;   
-   for(int i = 0; fscanf(fpp, "%s %d", key, &val) != EOF;){
-      
-      ret_val = add(key, &val, sizeof(int), TYPE_INT, &dh);
+ 
+   for(int i = 1; i <= NUM; i++){ 
+      ret_val = add((char*)(&i), &i, sizeof(int), TYPE_INT, &dh);
 
       #ifdef _DEBUG
-         printf("index : %7d\tadd return : %d\n", i++, ret_val);
+         printf("index : %7d\tadd return : %d\n", i, ret_val);
       #endif
    }
 
@@ -56,45 +54,32 @@ int main(){
       gettimeofday(&find_start, NULL);
    #endif
 
-   fseek(fpp, 0, SEEK_SET);
-   for(int i = 0; fscanf(fpp, "%s %d", key, &val) != EOF;){
+   for(int i = 1; i <= NUM; i++){
       
-      ret_val = find(key, &dh, &data);
+      ret_val = find((char*)(&i), &dh, &data);
 
       #ifdef _DEBUG
-         /* if(!ret_val){
+         if(!ret_val){
             find_total++;
-         } */
-         printf("index : %d\tfind return : %d\n", i++, ret_val);
+         }
+         printf("index : %d\tfind return : %d\n", i, ret_val);
       #endif
    }
-
-   fclose(fpp);
 
    #ifdef _PRINTF_TIME
       gettimeofday(&find_stop, NULL);
    #endif
 
-   ret_val = del(key, &dh);
+   #ifdef _REORGANIZE
+      #ifdef _PRINTF_TIME
+         gettimeofday(&reo_start, NULL);
+      #endif
 
-   #ifdef _DEBUG
-      printf("del return : %d\n", ret_val);
-   #endif
+      ret_val = reorganize(&dh);
 
-   ret_val = find(key, &dh, &data);
-
-   #ifdef _DEBUG
-      printf("find return : %d\n", ret_val);
-   #endif
-
-   #ifdef _PRINTF_TIME
-      gettimeofday(&reo_start, NULL);
-   #endif
-
-   ret_val = reorganize(&dh);
-
-   #ifdef _PRINTF_TIME
-      gettimeofday(&reo_stop, NULL);
+      #ifdef _PRINTF_TIME
+         gettimeofday(&reo_stop, NULL);
+      #endif
    #endif
 
    #ifdef _PRINTF_TIME
@@ -111,9 +96,11 @@ int main(){
       printf("find total : %d\n", find_total);
    #endif
 
-   #ifdef _PRINTF_TIME
-      printf("reorganize time : %f\n",
-      (find_stop.tv_sec - find_start.tv_sec) + (double)(find_stop.tv_usec - find_start.tv_usec)/1000000.0);
+   #ifdef _REORGANIZE
+      #ifdef _PRINTF_TIME
+         printf("reorganize time : %f\n",
+         (find_stop.tv_sec - find_start.tv_sec) + (double)(find_stop.tv_usec - find_start.tv_usec)/1000000.0);
+      #endif
    #endif
 
 
@@ -161,15 +148,6 @@ int open_table(_DISK_HASH *dh){
       return ERR_DIR;
    }
 
-   //get table file info
-   if(stat(TABLE_FILE_NAME, &info) && errno != ENOENT){
-   #ifdef _DEBUG
-      printf("%s\n", strerror(errno));
-   #endif
-
-   return errno;
-   }
-
    dh->buf.table_buf = (long*)my_malloc(TABLE_SIZE);
    if(!dh->buf.table_buf){
    #ifdef _DEBUG
@@ -190,22 +168,33 @@ int open_table(_DISK_HASH *dh){
       goto ERROR;
    }
 
-   //table file is exist?
-   if(errno == ENOENT){
-      dh->buf.table = fopen(TABLE_FILE_NAME, "w+");
-      if(!dh->buf.table){
+   //get table file info
+   ret_val = stat(TABLE_FILE_NAME, &info);
+   if(ret_val){
+      //table file is exist?
+      if(ret_val && errno == ENOENT){
+         dh->buf.table = fopen(TABLE_FILE_NAME, "w+");
+         if(!dh->buf.table){
+         #ifdef _DEBUG
+            printf("ERROR open file!\n");
+         #endif
+
+            ret_val = ERR_OPEN_FILE;
+            goto ERROR;
+         }
+
+         //initialization table
+         long *ptr = dh->buf.table_buf;
+         for(int i = 0; i < TABLE_NUMBER; i++){
+            *ptr++ = -1;
+         }
+      }
+      else{
       #ifdef _DEBUG
-         printf("ERROR open file!\n");
+         printf("%s\n", strerror(errno));
       #endif
 
-         ret_val = ERR_OPEN_FILE;
-         goto ERROR;
-      }
-
-      //initialization table
-      long *ptr = dh->buf.table_buf;
-      for(int i = 0; i < TABLE_NUMBER; i++){
-         *ptr++ = -1;
+         return errno;
       }
    }
    else{
@@ -240,18 +229,20 @@ int open_table(_DISK_HASH *dh){
    }
 
    //get data file info
-   if(stat(DATA_FILE_NAME, &info) && errno != ENOENT){
+   ret_val = stat(DATA_FILE_NAME, &info);
+   if(ret_val){
+      //data file is exist?
+      if(errno == ENOENT){
+         dh->buf.data = fopen(DATA_FILE_NAME, "w+");
+      }
+      else{
       #ifdef _DEBUG
          printf("%s\n", strerror(errno));
       #endif
 
-      ret_val = errno;
-      goto ERROR;
-   }
-   
-   //data file is exist?
-   if(errno == ENOENT){
-      dh->buf.data = fopen(DATA_FILE_NAME, "w+");
+         ret_val = errno;
+         goto ERROR;
+      }
    }
    else{
       dh->buf.data = fopen(DATA_FILE_NAME, "r+");
@@ -433,10 +424,6 @@ int add(const char *key, const void *val, const size_t val_size, const char type
 
    //found
    if(!ret_val){
-      #ifdef _DEBUG
-         find_total++;
-      #endif
-
       ret_val = del(key, dh);
       if(ret_val){
       #ifdef _DEBUG
@@ -472,7 +459,7 @@ int add(const char *key, const void *val, const size_t val_size, const char type
       return ret_val;
    }
 
-   fflush(dh->buf.data);
+   //write to data
    fseek(dh->buf.data, dh->block.block_ptr, SEEK_SET);
    if(BLOCK_SIZE != fwrite(dh->buf.block_buf, 1, BLOCK_SIZE, dh->buf.data)){
    #ifdef _DEBUG
@@ -481,7 +468,12 @@ int add(const char *key, const void *val, const size_t val_size, const char type
 
       return ERR_WRITE;
    }
+   fflush(dh->buf.data);
 
+   #ifdef _DEBUG
+      printf("stop!\n", ret_val);
+      //getchar();
+   #endif
 
    return SUCCESS;
 }
@@ -713,7 +705,6 @@ int copy_to_buffer( void *ptr, size_t total_size, const char *key, const void *v
    return SUCCESS;
 }
 
-
 int reorganize(_DISK_HASH *dh){
    if(!dh){
    #ifdef _DEBUG
@@ -766,10 +757,6 @@ int reorganize(_DISK_HASH *dh){
       ret_val = ERR_MY_MALLOC;
       goto ERROR;
    }
-
-   #ifdef _DEBUG
-      total = 0;
-   #endif
 
    for(int i = 0; i < TABLE_NUMBER; i++){
       ret_val = reorganize_data(dh, new_data, data_block_buf, &new_data_ptr, i);
