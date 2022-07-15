@@ -11,7 +11,7 @@
 #include <sys/time.h>
 
 
-#define BLOCK_SIZE         1 << 14
+#define BLOCK_SIZE         1 << 13
 #define BLOCK_TOTAL_SIZE   sizeof(long)
 #define NEXT_SIZE          sizeof(long)
 #define TABLE_NUMBER       10000019
@@ -55,10 +55,10 @@ typedef struct _DATA{
 } _DATA;
 
 typedef struct _BLOCK{
-   int      table_ptr;
-   long     data_ptr;
-   long     block_ptr;
-   long     pre_block_ptr;
+   int      table_offset;
+   long     data_offset;
+   long     block_offset;
+   long     pre_block_offset;
 } _BLOCK;
 
 typedef struct _BUFFER{
